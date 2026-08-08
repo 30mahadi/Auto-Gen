@@ -1,43 +1,27 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Program.cs
-#region snippet_Program
-#region snippet_Program_funcs
-using GettingStartedSample;
-using Microsoft.AutoGen.Contracts;
-using Microsoft.AutoGen.Core;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using ModifyF = System.Func<int, int>;
-using TerminationF = System.Func<int, bool>;
 
-ModifyF modifyFunc = (int x) => x - 1;
-TerminationF runUntilFunc = (int x) =>
-{
-    return x <= 1;
-};
-#endregion snippet_Program_funcs
+using Microsoft.Extensions.Hosting;
 
-#region snippet_Program_builder
-AgentsAppBuilder appBuilder = new AgentsAppBuilder();
-appBuilder.UseInProcessRuntime();
-
-appBuilder.Services.TryAddSingleton(modifyFunc);
-appBuilder.Services.TryAddSingleton(runUntilFunc);
-
-appBuilder.AddAgent<Checker>("Checker");
-appBuilder.AddAgent<Modifier>("Modifier");
-
-var app = await appBuilder.BuildAsync();
+var builder = DistributedApplication.CreateBuilder(args);
+var backend = builder.AddProject<Projects.Microsoft_AutoGen_AgentHost>("backend").WithExternalHttpEndpoints();
+var client = builder.AddProject<Projects.HelloAgent>("HelloAgentsDotNET")
+    .WithReference(backend)
+    .WithEnvironment("AGENT_HOST", backend.GetEndpoint("https"))
+    .WithEnvironment("STAY_ALIVE_ON_GOODBYE", "true")
+    .WaitFor(backend);
+#pragma warning disable ASPIREHOSTINGPYTHON001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+// xlang is over http for now - in prod use TLS between containers
+builder.AddPythonApp("HelloAgentsPython", "../../../../python/samples/core_xlang_hello_python_agent", "hello_python_agent.py", "../../.venv")
+    .WithReference(backend)
+    .WithEnvironment("AGENT_HOST", backend.GetEndpoint("http"))
+    .WithEnvironment("STAY_ALIVE_ON_GOODBYE", "true")
+    .WithEnvironment("GRPC_DNS_RESOLVER", "native")
+    .WithOtlpExporter()
+    .WaitFor(client);
+#pragma warning restore ASPIREHOSTINGPYTHON001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+using var app = builder.Build();
 await app.StartAsync();
-#endregion snippet_Program_builder
-
-#region snippet_Program_publish
-// Send the initial count to the agents app, running on the `local` runtime, and pass through the registered services via the application `builder`
-await app.PublishMessageAsync(new CountMessage
-{
-    Content = 10
-}, new TopicId("default"));
-
-// Run until application shutdown
+var url = backend.GetEndpoint("http").Url;
+Console.WriteLine("Backend URL: " + url);
 await app.WaitForShutdownAsync();
-#endregion snippet_Program_publish
-#endregion snippet_Program
