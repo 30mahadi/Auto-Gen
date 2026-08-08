@@ -1,3 +1,3 @@
-# Docs
+# Microsoft.AutoGen
 
-You can find the project documentation [here](https://microsoft.github.io/autogen/dev/).
+- [Getting started sample](../../samples/getting-started/)
