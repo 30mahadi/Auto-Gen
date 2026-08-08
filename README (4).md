@@ -1,13 +1,13 @@
-# Chess Game Example
+# Async Human-in-the-Loop Example
 
-An example with two chess player agents that executes its own tools to demonstrate tool use and reflection on tool use.
+An example showing human-in-the-loop which waits for human input before making the tool call.
 
 ## Prerequisites
 
 First, you need a shell with AutoGen core and required dependencies installed.
 
 ```bash
-pip install "autogen-ext[openai,azure]" "chess" "pyyaml"
+pip install "autogen-ext[openai,azure]" "pyyaml"
 ```
 
 ## Model Configuration
