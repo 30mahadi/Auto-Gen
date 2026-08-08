@@ -1,1 +1,12 @@
-square.png filter=lfs diff=lfs merge=lfs -text
+###############
+#    folder   #
+###############
+/**/DROP/
+/**/TEMP/
+/**/packages/
+/**/bin/
+/**/obj/
+
+# build artifacts for web
+_site/
+api/

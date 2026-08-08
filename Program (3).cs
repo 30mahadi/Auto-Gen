@@ -1,82 +1,42 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Program.cs
-
-using Microsoft.AutoGen.Agents;
-using Microsoft.AutoGen.Contracts;
-using Microsoft.AutoGen.Core;
-using Microsoft.AutoGen.Core.Grpc;
-using Samples;
-
-string? hostAddress = null;
-bool in_host_address = false;
-bool sendHello = true;
-foreach (string arg in args)
+using Aspire.Hosting.Python;
+using Microsoft.Extensions.Hosting;
+const string pythonHelloAgentPath = "../core_xlang_hello_python_agent";
+const string pythonHelloAgentPy = "hello_python_agent.py";
+const string pythonVEnv = "../../../../python/.venv";
+//Environment.SetEnvironmentVariable("XLANG_TEST_NO_DOTNET", "true");
+//Environment.SetEnvironmentVariable("XLANG_TEST_NO_PYTHON", "true");
+var builder = DistributedApplication.CreateBuilder(args);
+var backend = builder.AddProject<Projects.Microsoft_AutoGen_AgentHost>("AgentHost").WithExternalHttpEndpoints();
+IResourceBuilder<ProjectResource>? dotnet = null;
+#pragma warning disable ASPIREHOSTINGPYTHON001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+IResourceBuilder<PythonAppResource>? python = null;
+if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("XLANG_TEST_NO_DOTNET")))
 {
-    switch (arg)
-    {
-        case "--host":
-            in_host_address = true;
-            break;
-        case "--nosend":
-            sendHello = false;
-            break;
-        case "-h":
-        case "--help":
-            PrintHelp();
-            Environment.Exit(0);
-            break;
-        default:
-            if (in_host_address)
-            {
-                hostAddress = arg;
-            }
-            break;
-    }
+    dotnet = builder.AddProject<Projects.HelloAgentTests>("HelloAgentTestsDotNET")
+        .WithReference(backend)
+        .WithEnvironment("AGENT_HOST", backend.GetEndpoint("https"))
+        .WithEnvironment("STAY_ALIVE_ON_GOODBYE", "true")
+        .WaitFor(backend);
 }
-
-hostAddress ??= Environment.GetEnvironmentVariable("AGENT_HOST");
-var appBuilder = new AgentsAppBuilder(); // Create app builder
-// if we are using distributed, we need the AGENT_HOST var defined and then we will use the grpc runtime
-
-bool usingGrpc = false;
-if (hostAddress is string agentHost)
+if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("XLANG_TEST_NO_PYTHON")))
 {
-    usingGrpc = true;
-    Console.WriteLine($"connecting to {agentHost}");
-    appBuilder.AddGrpcAgentWorker(agentHost)
-        .AddAgent<HelloAgent>("HelloAgent");
+    // xlang is over http for now - in prod use TLS between containers
+    python = builder.AddPythonApp("HelloAgentTestsPython", pythonHelloAgentPath, pythonHelloAgentPy, pythonVEnv)
+        .WithReference(backend)
+        .WithEnvironment("AGENT_HOST", backend.GetEndpoint("http"))
+        .WithEnvironment("STAY_ALIVE_ON_GOODBYE", "true")
+        .WithEnvironment("GRPC_DNS_RESOLVER", "native")
+        .WithOtlpExporter()
+        .WaitFor(backend);
+    if (dotnet != null) { python.WaitFor(dotnet); }
 }
-else
-{
-    // Set up app builder for in-process runtime, allow message delivery to self, and add the Hello agent
-    appBuilder.UseInProcessRuntime(deliverToSelf: true).AddAgent<HelloAgent>("HelloAgent");
-}
-var app = await appBuilder.BuildAsync(); // Build the app
+#pragma warning restore ASPIREHOSTINGPYTHON001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+using var app = builder.Build();
 await app.StartAsync();
-// Create a custom message type from proto and define message
-
-if (sendHello)
-{
-    var message = new NewMessageReceived { Message = "Hello World!" };
-    await app.PublishMessageAsync(message, new TopicId("HelloTopic")).ConfigureAwait(false); // Publish custom message (handler has been set in HelloAgent)
-}
-else if (!usingGrpc)
-{
-    Console.Write("Warning: Using --nosend with the InProcessRuntime will hang. Terminating.");
-    Environment.Exit(-1);
-}
-
-await app.WaitForShutdownAsync().ConfigureAwait(false); // Wait for shutdown from agent
-
-static void PrintHelp()
-{
-    /*
-     HelloAgent [--host <hostAddress>] [--nosend]
-       --host Use gRPC gateway at <hostAddress>; this can also be set using the AGENT_HOST Environment Variable
-       --nosend Do not send the starting message. Note: This means HelloAgent will wait until some other agent will send
-                that message. This will not work when using the InProcessRuntime.
-     */
-    Console.WriteLine("HelloAgent [--host <hostAddress>] [--nosend]");
-    Console.WriteLine("  --host \tUse gRPC gateway at <hostAddress>; this can also be set using the AGENT_HOST Environment Variable");
-    Console.WriteLine("  --nosend \tDo not send the starting message. Note: This means HelloAgent will wait until some other agent will send");
-}
+var url = backend.GetEndpoint("http").Url;
+Console.WriteLine("Backend URL: " + url);
+if (dotnet != null) { Console.WriteLine("Dotnet Resource Projects.HelloAgentTests invoked as HelloAgentTestsDotNET"); }
+if (python != null) { Console.WriteLine("Python Resource hello_python_agent.py invoked as HelloAgentTestsPython"); }
+await app.WaitForShutdownAsync();
