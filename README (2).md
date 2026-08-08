@@ -1,82 +1,97 @@
-# Multi Agent Orchestration, Distributed Agent Runtime Example
+# AutoGen-Core Streaming Chat API with FastAPI
 
-This repository is an example of how to run a distributed agent runtime. The system is composed of three main components:
+This sample demonstrates how to build a streaming chat API with multi-turn conversation history using `autogen-core` and FastAPI.
 
-1. The agent host runtime, which is responsible for managing the eventing engine, and the pub/sub message system.
-2. The worker runtime, which is responsible for the lifecycle of the distributed agents, including the "semantic router".
-3. The user proxy, which is responsible for managing the user interface and the user interactions with the agents.
+## Key Features
 
+1.  **Streaming Response**: Implements real-time streaming of LLM responses by utilizing FastAPI's `StreamingResponse`, `autogen-core`'s asynchronous features, and a global queue created with `asyncio.Queue()` to manage the data stream, thereby providing faster user-perceived response times.
+2.  **Multi-Turn Conversation**: The Agent (`MyAgent`) can receive and process chat history records (`ChatHistory`) containing multiple turns of interaction, enabling context-aware continuous conversations.
 
-## Example Scenario
+## File Structure
 
-In this example, we have a simple scenario where we have a set of distributed agents (an "HR", and a "Finance" agent) which an enterprise may use to manage their HR and Finance operations. Each of these agents are independent, and can be running on different machines. While many multi-agent systems are built to have the agents collaborate to solve a difficult task - the goal of this example is to show how an enterprise may manage a large set of agents that are suited to individual tasks, and how to route a user to the most relevant agent for the task at hand.
+*   `app.py`: FastAPI application code, including API endpoints, Agent definitions, runtime settings, and streaming logic.
+*   `README.md`: (This document) Project introduction and usage instructions.
 
-The way this system is designed, when a user initiates a session, the semantic router agent will identify the intent of the user (currently using the overly simple method of string matching), identify the most relevant agent, and then route the user to that agent. The agent will then manage the conversation with the user, and the user will be able to interact with the agent in a conversational manner.
+## Installation
 
-While the logic of the agents is simple in this example, the goal is to show how the distributed runtime capabilities of autogen supports this scenario independantly of the capabilities of the agents themselves.
-
-## Getting Started
-
-1. Install `autogen-core` and its dependencies
-
-## To run
-
-Since this example is meant to demonstrate a distributed runtime, the components of this example are meant to run in different processes - i.e. different terminals.
-
-In 2 separate terminals, run:
+First, make sure you have Python installed (recommended 3.8 or higher). Then, in your project directory, install the necessary libraries via pip:
 
 ```bash
-# Terminal 1, to run the Agent Host Runtime
-python run_host.py
+pip install "fastapi" "uvicorn[standard]" "autogen-core" "autogen-ext[openai]"
 ```
+
+## Configuration
+
+Create a new file named `model_config.yaml` in the same directory as this README file to configure your model settings.
+See `model_config_template.yaml` for an example.
+
+**Note**: Hardcoding API keys directly in the code is only suitable for local testing. For production environments, it is strongly recommended to use environment variables or other secure methods to manage keys.
+
+## Running the Application
+
+In the directory containing `app.py`, run the following command to start the FastAPI application:
 
 ```bash
-# Terminal 2, to run the Worker Runtime
-python run_semantic_router.py
+uvicorn app:app --host 0.0.0.0 --port 8501 --reload
 ```
 
-The first terminal should log a series of events where the vrious agents are registered
-against the runtime.
+After the service starts, the API endpoint will be available at `http://<your-server-ip>:8501/chat/completions`.
 
-In the second terminal, you may enter a request related to finance or hr scenarios.
-In our simple example here, this means using one of the following keywords in your request:
+## Using the API
 
-- For the finance agent: "finance", "money", "budget"
-- For the hr agent: "hr", "human resources", "employee"   
+You can interact with the Agent by sending a POST request to the `/chat/completions` endpoint. The request body must be in JSON format and contain a `messages` field, the value of which is a list, where each element represents a turn of conversation.
 
-You will then see the host and worker runtimes send messages back and forth, routing to the correct
-agent, before the final response is printed.
+**Request Body Format**:
 
-The conversation can then continue with the selected agent until the user sends a message containing "END",at which point the agent will be disconnected from the user and a new conversation can start.
-
-## Message Flow
-
-Using the "Topic" feature of the agent host runtime, the message flow of the system is as follows:
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Closure_Agent
-    participant User_Proxy_Agent
-    participant Semantic_Router
-    participant Worker_Agent
-
-    User->>User_Proxy_Agent: Send initial message
-    Semantic_Router->>Worker_Agent: Route message to appropriate agent
-    Worker_Agent->>User_Proxy_Agent: Respond to user message
-    User_Proxy_Agent->>Closure_Agent: Forward message to externally facing Closure Agent
-    Closure_Agent->>User: Expose the response to the User
-    User->>Worker_Agent: Directly send follow up message
-    Worker_Agent->>User_Proxy_Agent: Respond to user message
-    User_Proxy_Agent->>Closure_Agent: Forward message to externally facing Closure Agent
-    Closure_Agent->>User: Return response
-    User->>Worker_Agent: Send "END" message
-    Worker_Agent->>User_Proxy_Agent: Confirm session end
-    User_Proxy_Agent->>Closure_Agent: Confirm session end
-    Closure_Agent->>User: Display session end message
+```json
+{
+  "messages": [
+    {"source": "user", "content": "Hello!"},
+    {"source": "assistant", "content": "Hello! How can I help you?"},
+    {"source": "user", "content": "Introduce yourself."}
+  ]
+}
 ```
-### Contributors
 
-- Diana Iftimie (@diftimieMSFT)
-- Oscar Fimbres (@ofimbres)
-- Taylor Rockey (@tarockey)
+**Example (using curl)**:
+
+```bash
+curl -N -X POST http://localhost:8501/chat/completions \
+-H "Content-Type: application/json" \
+-d '{
+  "messages": [
+    {"source": "user", "content": "Hello, I'\''m Tory."},
+    {"source": "assistant", "content": "Hello Tory, nice to meet you!"},
+    {"source": "user", "content": "Say hello by my name and introduce yourself."}
+  ]
+}'
+```
+
+**Example (using Python requests)**:
+
+```python
+import requests
+import json
+url = "http://localhost:8501/chat/completions"
+data = {
+    'stream': True,
+    'messages': [
+            {'source': 'user', 'content': "Hello,I'm tory."},
+            {'source': 'assistant', 'content':"hello Tory, nice to meet you!"},
+            {'source': 'user', 'content': "Say hello by my name and introduce yourself."}
+        ]
+    }
+headers = {'Content-Type': 'application/json'}
+try:
+    response = requests.post(url, json=data, headers=headers, stream=True)
+    response.raise_for_status()
+    for chunk in response.iter_content(chunk_size=None):
+        if chunk:
+            print(json.loads(chunk)["content"], end='', flush=True)
+
+except requests.exceptions.RequestException as e:
+    print(f"Error: {e}")
+except json.JSONDecodeError as e:
+    print(f"JSON Decode Error: {e}")
+```
+
