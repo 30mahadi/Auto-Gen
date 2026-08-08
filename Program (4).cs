@@ -1,63 +1,27 @@
-﻿using System.Reflection;
-using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel.Connectors.OpenAI;
-using Microsoft.SemanticKernel.Connectors.Qdrant;
-using Microsoft.SemanticKernel.Memory;
-using UglyToad.PdfPig;
-using UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor;
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Program.cs
 
-public sealed class Program
-{
-    private const string WafFileName = "azure-well-architected.pdf";
-    static async Task Main()
-    {
-        var kernelSettings = KernelSettings.LoadSettings();
+using Microsoft.Extensions.Hosting;
 
-        using ILoggerFactory loggerFactory = LoggerFactory.Create(builder =>
-        {
-            builder
-                .SetMinimumLevel(kernelSettings.LogLevel ?? LogLevel.Warning)
-                .AddConsole()
-                .AddDebug();
-        });
-
-        var memoryBuilder = new MemoryBuilder();
-        var memory = memoryBuilder.WithLoggerFactory(loggerFactory)
-                    .WithQdrantMemoryStore(kernelSettings.QdrantEndpoint, 1536)
-                    .WithAzureOpenAITextEmbeddingGeneration(kernelSettings.EmbeddingDeploymentOrModelId, kernelSettings.Endpoint, kernelSettings.ApiKey)
-                    .Build();
-
-        await ImportDocumentAsync(memory, WafFileName).ConfigureAwait(false);
-    }
-
-    public static async Task ImportDocumentAsync(ISemanticTextMemory memory, string filename)
-    {
-        var asm = Assembly.GetExecutingAssembly();
-        var currentDirectory = Path.GetDirectoryName(asm.Location);
-        if (currentDirectory is null)
-        {
-            throw new DirectoryNotFoundException($"Could not find directory for assembly '{asm}'.");
-        }
-
-        var filePath = Path.Combine(currentDirectory, filename);
-        using var pdfDocument = PdfDocument.Open(File.OpenRead(filePath));
-        var pages = pdfDocument.GetPages();
-        foreach (var page in pages)
-        {
-            try
-            {
-                var text = ContentOrderTextExtractor.GetText(page);
-                var descr = text.Take(100);
-                await memory.SaveInformationAsync(
-                    collection: "waf",
-                    text: text,
-                    id: $"{Guid.NewGuid()}",
-                    description: $"Document: {descr}").ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex.Message);
-            }
-        }
-    }
-}
+var builder = DistributedApplication.CreateBuilder(args);
+var backend = builder.AddProject<Projects.Microsoft_AutoGen_AgentHost>("backend").WithExternalHttpEndpoints();
+var client = builder.AddProject<Projects.HelloAgent>("HelloAgentsDotNET")
+    .WithReference(backend)
+    .WithEnvironment("AGENT_HOST", backend.GetEndpoint("https"))
+    .WithEnvironment("STAY_ALIVE_ON_GOODBYE", "true")
+    .WaitFor(backend);
+#pragma warning disable ASPIREHOSTINGPYTHON001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+// xlang is over http for now - in prod use TLS between containers
+builder.AddPythonApp("HelloAgentsPython", "../../../../python/samples/core_xlang_hello_python_agent", "hello_python_agent.py", "../../.venv")
+    .WithReference(backend)
+    .WithEnvironment("AGENT_HOST", backend.GetEndpoint("http"))
+    .WithEnvironment("STAY_ALIVE_ON_GOODBYE", "true")
+    .WithEnvironment("GRPC_DNS_RESOLVER", "native")
+    .WithOtlpExporter()
+    .WaitFor(client);
+#pragma warning restore ASPIREHOSTINGPYTHON001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+using var app = builder.Build();
+await app.StartAsync();
+var url = backend.GetEndpoint("http").Url;
+Console.WriteLine("Backend URL: " + url);
+await app.WaitForShutdownAsync();
