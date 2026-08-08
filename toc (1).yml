@@ -1,11 +1,20 @@
-- name: Chat with an agent
-  href: Chat-with-an-agent.md
+- name: 0.2.2
+  href: 0.2.2.md
 
-- name: Image chat with agent
-  href: Image-chat-with-agent.md
+- name: 0.2.1
+  href: 0.2.1.md
+  
+- name: 0.2.0
+  href: 0.2.0.md
+  
+- name: 0.1.0
+  href: 0.1.0.md
+  
+- name: 0.0.17
+  href: 0.0.17.md
 
-- name: Create agent with tools
-  href: Create-agent-with-tools.md
+- name: 0.0.16
+  href: 0.0.16.md
 
-- name: Use AutoGen.Net agent as model in AG Studio
-  href: Use-AutoGen.Net-agent-as-model-in-AG-Studio.md
+- name: 0.0.0 - 0.0.15
+  href: update.md
